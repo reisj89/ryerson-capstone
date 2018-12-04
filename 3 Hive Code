@@ -1,0 +1,82 @@
+create database capstone;
+use capstone;
+
+
+create table capstone.user_data (
+	id int,
+	name string,
+	created_utc string,
+	updated_on string,
+	comment_karma int,
+	link_karma int)
+row format delimited
+fields terminated by ','
+tblproperties("skip.header.line.count"="1");
+
+load data inpath '/user/root/RA_2018-09'
+overwrite into table capstone.user_data;
+
+
+create table capstone.user_selects (
+	username string,
+	num_posts int)
+row format delimited
+fields terminated by ','
+tblproperties("skip.header.line.count"="1");
+
+load data inpath '/user/root/SelectedUsers.csv'
+overwrite into table capstone.user_selects;
+
+
+set hive.tez.input.format=org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
+
+CREATE TABLE capstone.selected_users AS
+SELECT a.id, a.name, a.created_utc, a.comment_karma, a.link_karma, b.num_posts
+FROM capstone.user_data a JOIN capstone.user_selects b
+     ON a.name = b.username;
+
+create table capstone.comment_data (
+obj_id string,
+author string,
+collapsed string,
+collapsed_reason string,
+controversiality string,
+created_utc string,
+distinguished string,
+edited string,
+gilded int,
+id string,
+is_submitter string,
+score string,
+subreddit string,
+bodylength int,
+compound string,
+pos float,
+neu float,
+neg float,
+sentiment_label string)
+row format delimited
+fields terminated by ','
+tblproperties("skip.header.line.count"="1");
+
+load data inpath '/user/root/CleanedSentimentNoBody.csv'
+overwrite into table capstone.comment_data;
+
+
+CREATE TABLE capstone.author_sentiment AS
+SELECT author, AVG(compound) as auth_compound, AVG(bodylength) as auth_bodylength
+FROM capstone.comment_data
+GROUP BY author;
+
+
+CREATE TABLE capstone.intermediate_data AS
+SELECT a.name, a.created_utc, a.comment_karma, a.link_karma, a.num_posts, b.obj_id, b.collapsed, b.collapsed_reason, b.controversiality, b.distinguished, b.edited, b.gilded, b.id, b.is_submitter, b.score, b.subreddit, b.bodylength, b.compound, b.pos, b.neu, b.neg, b.sentiment_label
+FROM capstone.selected_users a JOIN capstone.comment_data b
+ON a.name = b.author;
+
+CREATE TABLE capstone.full_data AS
+SELECT *
+FROM capstone.intermediate_data c JOIN capstone.author_sentiment d
+ON c.name = d.author;
+
+$ hive -e 'set hive.cli.print.header=true; select * from capstone.full_data' | sed 's/[\t]/,/g'  > /usr/FullDataOut2.csv
